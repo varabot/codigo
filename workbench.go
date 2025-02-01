@@ -5,14 +5,16 @@ import (
 	"bytes"
 	"embed"
 	"encoding/json"
-	"io"
+	"log"
 	"net/http"
+	"net/url"
 
 	_ "embed"
 
+	"github.com/btwiuse/wsconn"
+	"github.com/progrium/go-vscode/bridge"
 	"github.com/progrium/go-vscode/internal/zipfs"
 	"github.com/progrium/go-vscode/product"
-	"golang.org/x/net/websocket"
 	"tractor.dev/toolkit-go/duplex/codec"
 	"tractor.dev/toolkit-go/duplex/fn"
 	"tractor.dev/toolkit-go/duplex/mux"
@@ -47,35 +49,52 @@ type URIComponents struct {
 
 type Workbench struct {
 	ProductConfiguration        product.Configuration `json:"productConfiguration"`
-	AdditionalBuiltinExtensions []URIComponents       `json:"additionalBuiltinExtensions,omitempty"`
+	AdditionalBuiltinExtensions []*URIComponents      `json:"additionalBuiltinExtensions,omitempty"`
 	FolderURI                   *URIComponents        `json:"folderUri,omitempty"`
+	InitialColorTheme           ColorScheme           `json:"initialColorTheme,omitempty"`
 
-	FS      fs.FS                              `json:"-"`
-	MakePTY func() (io.ReadWriteCloser, error) `json:"-"`
+	FS fs.FS `json:"-"`
 }
 
-type bridge struct {
-	wb *Workbench
+func (wb *Workbench) GetFS() fs.FS {
+	return wb.FS
+}
+
+type ColorScheme struct {
+	ThemeType string            `json:"themeType"` // "dark" | "light" | "hcLight" | "hcDark"
+	Colors    map[string]string `json:"colors,omitempty"`
+}
+
+func (wb *Workbench) setColorScheme(t string) {
+	wb.InitialColorTheme.ThemeType = t
 }
 
 func (wb *Workbench) ensureExtension(r *http.Request) {
+	origin := r.Header.Get("Origin")
+
+	o, err := url.Parse(origin)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	abe := &URIComponents{
+		Scheme:    o.Scheme,
+		Authority: o.Host,
+		Path:      "/extension",
+	}
+
 	foundExtension := false
-	for _, e := range wb.AdditionalBuiltinExtensions {
+	for i, e := range wb.AdditionalBuiltinExtensions {
 		if e.Path == "/extension" {
+			wb.AdditionalBuiltinExtensions[i] = abe
 			foundExtension = true
 			break
 		}
 	}
+
 	if !foundExtension {
-		scheme := "http"
-		if r.TLS != nil {
-			scheme = "https"
-		}
-		wb.AdditionalBuiltinExtensions = append(wb.AdditionalBuiltinExtensions, URIComponents{
-			Scheme:    scheme,
-			Authority: r.Host,
-			Path:      "/extension",
-		})
+		wb.AdditionalBuiltinExtensions = append(wb.AdditionalBuiltinExtensions, abe)
 	}
 }
 
@@ -88,26 +107,40 @@ func (wb *Workbench) ensureFolder() {
 	}
 }
 
-func (wb *Workbench) handleBridge(conn *websocket.Conn) {
-	conn.PayloadType = websocket.BinaryFrame
+func (wb *Workbench) handleBridge(w http.ResponseWriter, r *http.Request) {
+	conn, err := wsconn.Wrconn(w, r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Println(err)
+		return
+	}
+
 	sess := mux.New(conn)
 	defer sess.Close()
 
 	peer := talk.NewPeer(sess, codec.CBORCodec{})
-	peer.Handle("vscode/", fn.HandlerFrom(&bridge{
-		wb: wb,
-	}))
+	peer.Handle("vscode/", fn.HandlerFrom(&bridge.Bridge{wb}))
 	peer.Respond()
 }
 
 func (wb *Workbench) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	wb.ensureExtension(r)
+	// wb.setColorScheme("dark")
 	wb.ensureFolder()
 
-	fsys := workingpathfs.New(zipfs.New(vscodeReader), "dist")
 	mux := http.NewServeMux()
-	mux.Handle("/bridge", websocket.Handler(wb.handleBridge))
+
+	mux.Handle("/workbench.json", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wb.ensureExtension(r)
+		w.Header().Add("content-type", "application/json")
+		enc := json.NewEncoder(w)
+		if err := enc.Encode(wb); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	}))
+
 	mux.Handle("/extension/", http.FileServerFS(embedded))
+
+	fsys := workingpathfs.New(zipfs.New(vscodeReader), "dist")
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
 			http.ServeFileFS(w, r, embedded, "assets/index.html")
@@ -119,16 +152,10 @@ func (wb *Workbench) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if r.URL.Path == "/workbench.json" {
-			w.Header().Add("content-type", "application/json")
-			enc := json.NewEncoder(w)
-			if err := enc.Encode(wb); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-			}
-			return
-		}
-
 		http.FileServerFS(fsys).ServeHTTP(w, r)
 	}))
+
+	mux.HandleFunc("/bridge", wb.handleBridge)
+
 	mux.ServeHTTP(w, r)
 }

@@ -1,4 +1,4 @@
-package vscode
+package bridge
 
 import (
 	"strings"
@@ -22,8 +22,8 @@ func fixPath(path string) string {
 	return p
 }
 
-func (api *bridge) Stat(path string) (*entry, error) {
-	fi, err := fs.Stat(api.wb.FS, fixPath(path))
+func (api *Bridge) Stat(path string) (*entry, error) {
+	fi, err := fs.Stat(api.GetFS(), fixPath(path))
 	if err != nil {
 		return nil, err
 	}
@@ -36,12 +36,12 @@ func (api *bridge) Stat(path string) (*entry, error) {
 	}, nil
 }
 
-func (api *bridge) ReadFile(path string) ([]byte, error) {
-	return fs.ReadFile(api.wb.FS, fixPath(path))
+func (api *Bridge) ReadFile(path string) ([]byte, error) {
+	return fs.ReadFile(api.GetFS(), fixPath(path))
 }
 
-func (api *bridge) ReadDir(path string) ([]entry, error) {
-	dir, err := fs.ReadDir(api.wb.FS, fixPath(path))
+func (api *Bridge) ReadDir(path string) ([]entry, error) {
+	dir, err := fs.ReadDir(api.GetFS(), fixPath(path))
 	if err != nil {
 		return nil, err
 	}
@@ -59,10 +59,10 @@ func (api *bridge) ReadDir(path string) ([]entry, error) {
 	return entries, nil
 }
 
-func (api *bridge) WriteFile(path string, data []byte) error {
-	return fs.WriteFile(api.wb.FS, fixPath(path), data, 0644)
+func (api *Bridge) WriteFile(path string, data []byte) error {
+	return fs.WriteFile(api.GetFS(), fixPath(path), data, 0644)
 }
 
-func (api *bridge) MakeDir(path string) error {
-	return fs.MkdirAll(api.wb.FS, fixPath(path), 0744)
+func (api *Bridge) MakeDir(path string) error {
+	return fs.MkdirAll(api.GetFS(), fixPath(path), 0744)
 }
