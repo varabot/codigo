@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/btwiuse/codigo/bridge"
 	"github.com/btwiuse/codigo/product"
@@ -30,9 +31,13 @@ var embedded embed.FS
 var vscodeReader *zip.Reader
 
 func DownloadAndUnzipVSCode() {
-	vscodeURL, err := embedded.ReadFile("assets/vscode_url.txt")
-	if err != nil {
-		panic(err)
+	vscodeURL := os.Getenv("VSCODE_WEB_URL")
+	if vscodeURL == "" {
+		urlBytes, err := embedded.ReadFile("assets/vscode_url.txt")
+		if err != nil {
+			panic(err)
+		}
+		vscodeURL = strings.TrimSpace(string(urlBytes))
 	}
 
 	homeDir, err := os.UserHomeDir()
@@ -43,7 +48,8 @@ func DownloadAndUnzipVSCode() {
 	vscodeZipPath := filepath.Join(homeDir, ".codigo", "vscode-web.zip")
 
 	if _, err := os.Stat(vscodeZipPath); os.IsNotExist(err) {
-		resp, err := http.Get(string(vscodeURL))
+		log.Printf("Downloading VSCODE_WEB_URL: %s\n", vscodeURL)
+		resp, err := http.Get(vscodeURL)
 		if err != nil {
 			panic(err)
 		}
