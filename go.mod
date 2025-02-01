@@ -1,4 +1,4 @@
-module github.com/progrium/go-vscode
+module github.com/btwiuse/codigo
 
 go 1.24rc2
 

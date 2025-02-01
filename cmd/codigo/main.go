@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/progrium/go-vscode"
-	"github.com/progrium/go-vscode/product"
+	"github.com/btwiuse/codigo"
+	"github.com/btwiuse/codigo/product"
 	"github.com/webteleport/utils"
 	"github.com/webteleport/wtf"
 	"tractor.dev/toolkit-go/engine/fs/osfs"
