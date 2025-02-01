@@ -1,6 +1,6 @@
 module github.com/btwiuse/codigo
 
-go 1.23
+go 1.24rc2
 
 require (
 	github.com/btwiuse/wsconn v0.0.3

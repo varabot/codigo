@@ -1,15 +1,16 @@
-package vscode
+package codigo
 
 import (
 	"archive/zip"
 	"bytes"
 	"embed"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
-
-	_ "embed"
+	"os"
+	"path/filepath"
 
 	"github.com/btwiuse/codigo/bridge"
 	"github.com/btwiuse/codigo/product"
@@ -28,11 +29,46 @@ var embedded embed.FS
 
 var vscodeReader *zip.Reader
 
-func init() {
-	b, err := embedded.ReadFile("assets/vscode-web.zip")
+func DownloadAndUnzipVSCode() {
+	vscodeURL, err := embedded.ReadFile("assets/vscode_url.txt")
 	if err != nil {
 		panic(err)
 	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		panic(err)
+	}
+
+	vscodeZipPath := filepath.Join(homeDir, ".codigo", "vscode-web.zip")
+
+	if _, err := os.Stat(vscodeZipPath); os.IsNotExist(err) {
+		resp, err := http.Get(string(vscodeURL))
+		if err != nil {
+			panic(err)
+		}
+		defer resp.Body.Close()
+
+		if err := os.MkdirAll(filepath.Dir(vscodeZipPath), 0755); err != nil {
+			panic(err)
+		}
+
+		out, err := os.Create(vscodeZipPath)
+		if err != nil {
+			panic(err)
+		}
+		defer out.Close()
+
+		if _, err := io.Copy(out, resp.Body); err != nil {
+			panic(err)
+		}
+	}
+
+	b, err := os.ReadFile(vscodeZipPath)
+	if err != nil {
+		panic(err)
+	}
+
 	vscodeReader, err = zip.NewReader(bytes.NewReader(b), int64(len(b)))
 	if err != nil {
 		panic(err)

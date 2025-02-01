@@ -16,10 +16,12 @@ import (
 func main() {
 	log.SetFlags(log.Ltime | log.Lshortfile)
 
+	codigo.DownloadAndUnzipVSCode()
+
 	cwd, _ := os.Getwd()
 	fsys := workingpathfs.New(osfs.New(), cwd)
 
-	wb := &vscode.Workbench{
+	wb := &codigo.Workbench{
 		ProductConfiguration: product.Configuration{
 			NameLong: "My Custom Editor",
 		},
