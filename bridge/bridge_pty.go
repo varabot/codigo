@@ -7,7 +7,7 @@ import (
 func (api *Bridge) Terminal(r rpc.Responder, c *rpc.Call) {
 	c.Receive(nil)
 
-	wetty := newWetty("/bin/bash")
+	wetty := newWetty("bash")
 
 	ch, err := r.Continue()
 	if err != nil {
