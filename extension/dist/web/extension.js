@@ -65,7 +65,9 @@ var HostFS = class _HostFS {
     this.onDidChangeFile = this._emitter.event;
     this.peer = peer;
     this.disposable = import_vscode.Disposable.from(
-      import_vscode.workspace.registerFileSystemProvider(_HostFS.scheme, this, { isCaseSensitive: true })
+      import_vscode.workspace.registerFileSystemProvider(_HostFS.scheme, this, {
+        isCaseSensitive: true
+      })
       // workspace.registerFileSearchProvider(MemFS.scheme, this),
       // workspace.registerTextSearchProvider(MemFS.scheme, this)
     );
@@ -79,99 +81,124 @@ var HostFS = class _HostFS {
   // root = new Directory(Uri.parse('memfs:/'), '');
   // --- manage file metadata
   stat(uri) {
-    return new Promise((resolve, reject) => {
-      this._lookup(uri, false).then(resolve, reject);
-    });
+    return new Promise(
+      (resolve, reject) => {
+        this._lookup(uri, false).then(resolve, reject);
+      }
+    );
   }
   readDirectory(uri) {
-    return new Promise(async (resolve, reject) => {
-      try {
-        const resp = await this.peer.call("vscode.ReadDir", [uri.path]);
-        let result = [];
-        for (const entry of resp.value) {
-          result.push([entry.Name, entry.IsDir ? import_vscode.FileType.Directory : import_vscode.FileType.File]);
+    return new Promise(
+      async (resolve, reject) => {
+        try {
+          const resp = await this.peer.call("vscode.ReadDir", [uri.path]);
+          let result = [];
+          for (const entry of resp.value) {
+            result.push([
+              entry.Name,
+              entry.IsDir ? import_vscode.FileType.Directory : import_vscode.FileType.File
+            ]);
+          }
+          resolve(result);
+        } catch (e) {
+          reject(e);
         }
-        resolve(result);
-      } catch (e) {
-        reject(e);
       }
-    });
+    );
   }
   // --- manage file contents
   readFile(uri) {
-    return new Promise(async (resolve, reject) => {
-      try {
-        const resp = await this.peer.call("vscode.ReadFile", [uri.path]);
-        resolve(resp.value);
-      } catch (e) {
-        reject(import_vscode.FileSystemError.FileNotFound());
+    return new Promise(
+      async (resolve, reject) => {
+        try {
+          const resp = await this.peer.call("vscode.ReadFile", [uri.path]);
+          resolve(resp.value);
+        } catch (e) {
+          reject(import_vscode.FileSystemError.FileNotFound());
+        }
       }
-    });
+    );
   }
   writeFile(uri, content, options) {
-    return new Promise(async (resolve, reject) => {
-      let entry = await this._lookup(uri, true);
-      if (entry instanceof Directory) {
-        reject(import_vscode.FileSystemError.FileIsADirectory(uri));
+    return new Promise(
+      async (resolve, reject) => {
+        let entry = await this._lookup(uri, true);
+        if (entry instanceof Directory) {
+          reject(import_vscode.FileSystemError.FileIsADirectory(uri));
+        }
+        if (!entry && !options.create) {
+          reject(import_vscode.FileSystemError.FileNotFound(uri));
+        }
+        if (entry && options.create && !options.overwrite) {
+          reject(import_vscode.FileSystemError.FileExists(uri));
+        }
+        try {
+          await this.peer.call("vscode.WriteFile", [uri.path, content]);
+        } catch (e) {
+          reject(e);
+        }
+        if (!entry) {
+          this._fireSoon({ type: import_vscode.FileChangeType.Created, uri });
+        }
+        this._fireSoon({ type: import_vscode.FileChangeType.Changed, uri });
+        resolve();
       }
-      if (!entry && !options.create) {
-        reject(import_vscode.FileSystemError.FileNotFound(uri));
-      }
-      if (entry && options.create && !options.overwrite) {
-        reject(import_vscode.FileSystemError.FileExists(uri));
-      }
-      try {
-        await this.peer.call("vscode.WriteFile", [uri.path, content]);
-      } catch (e) {
-        reject(e);
-      }
-      if (!entry) {
-        this._fireSoon({ type: import_vscode.FileChangeType.Created, uri });
-      }
-      this._fireSoon({ type: import_vscode.FileChangeType.Changed, uri });
-      resolve();
-    });
+    );
   }
   // --- manage files/folders
   copy(source, destination, options) {
-    return new Promise(async (resolve, reject) => {
-      reject("not implemented");
-    });
+    return new Promise(
+      async (resolve, reject) => {
+        reject("not implemented");
+      }
+    );
   }
   rename(oldUri, newUri, options) {
-    return new Promise(async (resolve, reject) => {
-      if (!options.overwrite && await this._lookup(newUri, true)) {
-        reject(import_vscode.FileSystemError.FileExists(newUri));
+    return new Promise(
+      async (resolve, reject) => {
+        if (!options.overwrite && await this._lookup(newUri, true)) {
+          reject(import_vscode.FileSystemError.FileExists(newUri));
+        }
+        let entry = await this._lookup(oldUri, false);
+        let oldParent = await this._lookupParentDirectory(oldUri);
+        let newParent = await this._lookupParentDirectory(newUri);
+        let newName = this._basename(newUri.path);
+        this._fireSoon(
+          { type: import_vscode.FileChangeType.Deleted, uri: oldUri },
+          { type: import_vscode.FileChangeType.Created, uri: newUri }
+        );
+        resolve();
       }
-      let entry = await this._lookup(oldUri, false);
-      let oldParent = await this._lookupParentDirectory(oldUri);
-      let newParent = await this._lookupParentDirectory(newUri);
-      let newName = this._basename(newUri.path);
-      this._fireSoon(
-        { type: import_vscode.FileChangeType.Deleted, uri: oldUri },
-        { type: import_vscode.FileChangeType.Created, uri: newUri }
-      );
-      resolve();
-    });
+    );
   }
   delete(uri, options) {
-    return new Promise(async (resolve, reject) => {
-      let dirname = uri.with({ path: this._dirname(uri.path) });
-      this._fireSoon({ type: import_vscode.FileChangeType.Changed, uri: dirname }, { uri, type: import_vscode.FileChangeType.Deleted });
-      resolve();
-    });
+    return new Promise(
+      async (resolve, reject) => {
+        let dirname = uri.with({ path: this._dirname(uri.path) });
+        this._fireSoon({ type: import_vscode.FileChangeType.Changed, uri: dirname }, {
+          uri,
+          type: import_vscode.FileChangeType.Deleted
+        });
+        resolve();
+      }
+    );
   }
   createDirectory(uri) {
-    return new Promise(async (resolve, reject) => {
-      let dirname = uri.with({ path: this._dirname(uri.path) });
-      try {
-        await this.peer.call("vscode.MakeDir", [uri.path]);
-      } catch (e) {
-        reject(e);
+    return new Promise(
+      async (resolve, reject) => {
+        let dirname = uri.with({ path: this._dirname(uri.path) });
+        try {
+          await this.peer.call("vscode.MakeDir", [uri.path]);
+        } catch (e) {
+          reject(e);
+        }
+        this._fireSoon({ type: import_vscode.FileChangeType.Changed, uri: dirname }, {
+          type: import_vscode.FileChangeType.Created,
+          uri
+        });
+        resolve();
       }
-      this._fireSoon({ type: import_vscode.FileChangeType.Changed, uri: dirname }, { type: import_vscode.FileChangeType.Created, uri });
-      resolve();
-    });
+    );
   }
   async _lookup(uri, silent) {
     try {
@@ -2213,22 +2240,43 @@ async function activate(context) {
 function createTerminal(peer) {
   const writeEmitter = new vscode.EventEmitter();
   let channel = void 0;
+  let log = vscode.window.createOutputChannel("go-vscode");
   const dec = new TextDecoder();
   const enc = new TextEncoder();
   const pty = {
     onDidWrite: writeEmitter.event,
-    open: () => {
+    open: (initialDimensions) => {
       (async () => {
         const resp = await peer.call("vscode.Terminal");
         channel = resp.channel;
-        const b = new Uint8Array(1024);
+        if (initialDimensions && channel) {
+          const { columns, rows } = initialDimensions;
+          let payload = JSON.stringify({
+            "version": 2,
+            "width": columns,
+            "height": rows,
+            "cmd": ["/bin/bash"],
+            "env": {
+              "TERM": "xterm-256color",
+              "FOO": "BAR"
+            }
+          });
+          channel.write(enc.encode(payload + "\n"));
+        }
+        const b = new Uint8Array(65536);
         let gotEOF = false;
         while (gotEOF === false) {
           const n = await channel.read(b);
           if (n === null) {
             gotEOF = true;
           } else {
-            writeEmitter.fire(dec.decode(b.subarray(0, n)));
+            let recv = dec.decode(b.subarray(0, n));
+            try {
+              let [, , out] = JSON.parse(recv);
+              writeEmitter.fire(out);
+            } catch (e) {
+              log.appendLine(`error: ${e}, len(recv): ${recv.length}`);
+            }
           }
         }
       })();
@@ -2240,7 +2288,19 @@ function createTerminal(peer) {
     },
     handleInput: (data) => {
       if (channel) {
-        channel.write(enc.encode(data));
+        let payload = JSON.stringify([0, "i", data]);
+        channel.write(enc.encode(payload + "\n"));
+      }
+    },
+    setDimensions: (dimensions) => {
+      if (channel) {
+        const { columns, rows } = dimensions;
+        let payload = JSON.stringify({
+          "version": 2,
+          "width": columns,
+          "height": rows
+        });
+        channel.write(enc.encode(payload + "\n"));
       }
     }
   };
