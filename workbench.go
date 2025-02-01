@@ -13,8 +13,8 @@ import (
 
 	"github.com/btwiuse/wsconn"
 	"github.com/progrium/go-vscode/bridge"
-	"github.com/progrium/go-vscode/internal/zipfs"
 	"github.com/progrium/go-vscode/product"
+	"github.com/progrium/go-vscode/zipfs"
 	"tractor.dev/toolkit-go/duplex/codec"
 	"tractor.dev/toolkit-go/duplex/fn"
 	"tractor.dev/toolkit-go/duplex/mux"
