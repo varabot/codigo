@@ -25,7 +25,11 @@ func Run(args []string) error {
 	}
 
 	var handler http.Handler = wb
-	handler = utils.GinLoggerMiddleware(wb)
+	handler = utils.GzipMiddleware(wb)
+	handler = utils.AllowAllCorsMiddleware(wb)
+	if os.Getenv("DEBUG") != "" {
+		handler = utils.GinLoggerMiddleware(wb)
+	}
 
 	return wtf.Serve(EnvRELAY(":8080"), handler)
 }
